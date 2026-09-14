@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather Vault — JFK Temperature Forecasting</title>
+<meta name="description" content="A Random Forest model trained on 12 years of NOAA data from JFK Airport, forecasting daily air temperature.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="grain"></div>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="console">
+      <div class="console-row">
+        <span class="console-label">STATION</span>
+        <span class="console-value">JFK INTERNATIONAL AIRPORT, NY US</span>
+      </div>
+      <div class="console-row">
+        <span class="console-label">COORDINATES</span>
+        <span class="console-value">40.6413° N, 73.7781° W</span>
+      </div>
+      <div class="console-row">
+        <span class="console-label">RECORD SPAN</span>
+        <span class="console-value" id="record-span">—</span>
+      </div>
+      <div class="console-row live">
+        <span class="console-label">LAST READING</span>
+        <span class="console-value" id="live-reading">— °F</span>
+      </div>
+    </div>
+
+    <h1>Weather Vault</h1>
+    <p class="hero-sub">A Random Forest model trained on twelve years of NOAA station data, forecasting daily air temperature at JFK — and how far its guesses drift from what actually happened.</p>
+
+    <div class="stat-strip">
+      <div class="stat">
+        <span class="stat-value" data-count="4351">0</span>
+        <span class="stat-key">daily records</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-mae">0.00°F</span>
+        <span class="stat-key">mean absolute error</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-rmse">0.00°F</span>
+        <span class="stat-key">root mean sq. error</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">100</span>
+        <span class="stat-key">trees in the forest</span>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-cue">scroll</div>
+</header>
+
+<main>
+
+  <section class="section" id="pipeline">
+    <div class="section-head">
+      <h2>How the model gets built</h2>
+      <p>Six stages, run in order, from a raw CSV export off NOAA's servers to a forecast that reaches into 2027.</p>
+    </div>
+    <ol class="pipeline">
+      <li>
+        <span class="pipeline-num">01</span>
+        <div>
+          <h3>Load &amp; clean</h3>
+          <p>Pull daily records from NOAA, keep the columns that matter, average max and min into a single air temperature, and drop incomplete rows.</p>
+        </div>
+      </li>
+      <li>
+        <span class="pipeline-num">02</span>
+        <div>
+          <h3>Engineer features</h3>
+          <p>Derive yesterday's temperature, 2- and 7-day lags, 7- and 30-day rolling averages, and a season flag — so the model sees trends, not just a single day.</p>
+        </div>
+      </li>
+      <li>
+        <span class="pipeline-num">03</span>
+        <div>
+          <h3>Split train / test</h3>
+          <p>Everything before January 1, 2024 trains the model. Everything after is held out — the model never sees it until it's asked to predict it.</p>
+        </div>
+      </li>
+      <li>
+        <span class="pipeline-num">04</span>
+        <div>
+          <h3>Train the forest</h3>
+          <p>100 decision trees, each built on a random subset of the data, average their votes into one prediction — steadier than any single tree.</p>
+        </div>
+      </li>
+      <li>
+        <span class="pipeline-num">05</span>
+        <div>
+          <h3>Measure accuracy</h3>
+          <p>Score predictions against the held-out set with MAE and RMSE — the second one punishes big misses harder than small ones.</p>
+        </div>
+      </li>
+      <li>
+        <span class="pipeline-num">06</span>
+        <div>
+          <h3>Forecast forward</h3>
+          <p>Roll the model's own outputs forward day by day through the end of 2027, blended with historical seasonal averages so it still breathes with the seasons.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="section" id="importance">
+    <div class="section-head">
+      <h2>What the model actually learned to weigh</h2>
+      <p>Ten input features went in. Feature importance shows how much each one actually swayed a prediction — hover a bar for the exact split.</p>
+    </div>
+    <div class="panel chart-panel">
+      <canvas id="importance-chart" height="320"></canvas>
+    </div>
+    <p class="caption">Yesterday's temperature and the 7-day rolling average alone account for over 90% of the model's decision-making. Wind, rain, and the calendar barely move the needle.</p>
+  </section>
+
+  <section class="section" id="backtest">
+    <div class="section-head">
+      <h2>Predicted vs. actual, 2024–2026</h2>
+      <p>The held-out period the model never trained on. The closer the two lines track, the better the forecast.</p>
+    </div>
+    <div class="panel chart-panel">
+      <canvas id="backtest-chart" height="320"></canvas>
+    </div>
+    <div class="legend-row">
+      <span class="legend-dot actual"></span> Actual recorded temperature
+      <span class="legend-dot predicted"></span> Model prediction
+    </div>
+  </section>
+
+  <section class="section" id="explorer">
+    <div class="section-head">
+      <h2>Try it — pick a date</h2>
+      <p>Any date from the start of the test period through the end of 2027. Dates before June 2026 are backtested against a real NOAA reading; dates after are the model forecasting into the unknown.</p>
+    </div>
+    <div class="panel explorer-panel">
+      <div class="explorer-controls">
+        <label for="date-picker">Date</label>
+        <input type="date" id="date-picker" min="2024-01-01" max="2027-12-31" value="2025-07-04">
+        <input type="range" id="date-slider" min="0" max="1" value="0" step="1">
+      </div>
+      <div class="explorer-readout">
+        <div class="readout-main">
+          <span class="readout-label" id="readout-badge">forecast</span>
+          <span class="readout-value" id="readout-temp">— °F</span>
+        </div>
+        <div class="readout-side" id="readout-actual-wrap">
+          <span class="readout-label">actual recorded</span>
+          <span class="readout-value small" id="readout-actual">—</span>
+          <span class="readout-delta" id="readout-delta"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="tree">
+    <div class="section-head">
+      <h2>Inside a single tree</h2>
+      <p>The forest is 100 of these. Each one asks a chain of yes/no questions about the rolling average and yesterday's temperature until it lands on a prediction.</p>
+    </div>
+    <div class="panel">
+      <pre class="code-block"><code>|--- RollingMean7 &lt;= 55.68
+|   |--- RollingMean7 &lt;= 43.68
+|   |   |--- PrevDayTemp &lt;= 33.25
+|   |   |   |--- RollingMean7 &lt;= 34.11
+|   |   |   |   |--- truncated branch of depth 21
+|   |   |   |--- RollingMean7 &gt;  34.11
+|   |   |   |   |--- truncated branch of depth 10
+|   |   |--- PrevDayTemp &gt;  33.25
+|   |   |   |--- PrevDayTemp &lt;= 37.75
+|   |   |   |   |--- truncated branch of depth 16
+|   |   |   |--- PrevDayTemp &gt;  37.75
+|   |   |   |   |--- truncated branch of depth 18
+|   |--- RollingMean7 &gt;  43.68
+|   |   |--- RollingMean7 &lt;= 48.82
+|   |   |   |--- Lag7 &lt;= 61.50
+|   |   |   |   |--- truncated branch of depth 20
+|   |   |   |--- Lag7 &gt;  61.50
+|   |   |   |   |--- truncated branch of depth 3
+|   |   |--- RollingMean7 &gt;  48.82
+|   |   |   |--- PrevDayTemp &lt;= 54.25
+|   |   |   |   |--- truncated branch of depth 14
+|   |   |   |--- PrevDayTemp &gt;  54.25
+|   |   |   |   |--- truncated branch of depth 12
+|--- RollingMean7 &gt;  55.68
+|   |--- RollingMean7 &lt;= 69.18
+|   |   |--- RollingMean7 &lt;= 62.96
+|   |   |   |--- PrevDayTemp &lt;= 56.25
+|   |   |   |   |--- truncated branch of depth 13
+|   |   |   |--- PrevDayTemp &gt;  56.25
+|   |   |   |   |--- truncated branch of depth 16
+|   |   |--- RollingMean7 &gt;  62.96
+|   |   |   |--- PrevDayTemp &lt;= 66.25
+|   |   |   |   |--- truncated branch of depth 14
+|   |   |   |--- PrevDayTemp &gt;  66.25
+|   |   |   |   |--- truncated branch of depth 18
+|   |--- RollingMean7 &gt;  69.18
+|   |   |--- PrevDayTemp &lt;= 77.25
+|   |   |   |--- RollingMean7 &lt;= 73.11
+|   |   |   |   |--- truncated branch of depth 13
+|   |   |   |--- RollingMean7 &gt;  73.11
+|   |   |   |   |--- truncated branch of depth 20
+|   |   |--- PrevDayTemp &gt;  77.25
+|   |   |   |--- PrevDayTemp &lt;= 80.25
+|   |   |   |   |--- truncated branch of depth 17
+|   |   |   |--- PrevDayTemp &gt;  80.25
+|   |   |   |   |--- truncated branch of depth 14</code></pre>
+      <p class="tree-note">Extracted with <code>sklearn.tree.export_text</code> from tree #0 of the trained forest, depth capped at 3 for readability. The real tree runs over 20 levels deep in places.</p>
+    </div>
+  </section>
+
+  <section class="section" id="problems">
+    <div class="section-head">
+      <h2>What broke, and the fix</h2>
+      <p>Three problems came up while building this. None of them were the model itself.</p>
+    </div>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <h3>API connectivity</h3>
+        <p class="problem-desc">Lost connection to the data source mid-integration.</p>
+        <p class="problem-fix"><span>Fix</span> Reconnected on a new server and hosting port.</p>
+      </div>
+      <div class="problem-card">
+        <h3>Monthly data display</h3>
+        <p class="problem-desc">The front end couldn't render the full monthly archive — gaps in the dataset broke the display.</p>
+        <p class="problem-fix"><span>Fix</span> Looped through the dataset to backfill missing months before rendering.</p>
+      </div>
+      <div class="problem-card">
+        <h3>Forecast line ran flat</h3>
+        <p class="problem-desc">The 2027 forecast stopped following seasonal swings — it converged toward a flat average instead of curving through summer and winter.</p>
+        <p class="problem-fix"><span>Fix</span> Blended the model's raw output 70/30 with the historical seasonal average for that day of year.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="next">
+    <div class="section-head">
+      <h2>Where this goes next</h2>
+    </div>
+    <div class="next-grid">
+      <div class="next-card">
+        <h3>More history, more factors</h3>
+        <p>Train on a longer record — closer to five decades — with more variables, to see current warming trends against a real baseline instead of twelve years.</p>
+      </div>
+      <div class="next-card">
+        <h3>Go beyond one station</h3>
+        <p>Bring in a global dataset that updates on a schedule, so the model — and the forecasts it produces — cover more than one airport.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p>Built by Lexi Munoz-Craig. Data: NOAA daily records, JFK International Airport station. Model: scikit-learn RandomForestRegressor.</p>
+  <p class="footer-links">
+    <a href="https://bmcraig2007.github.io" target="_blank" rel="noopener">Portfolio</a>
+    <span aria-hidden="true">·</span>
+    <a href="#" target="_blank" rel="noopener" id="repo-link">Source on GitHub</a>
+  </p>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
